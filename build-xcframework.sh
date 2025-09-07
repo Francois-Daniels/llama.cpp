@@ -539,3 +539,5 @@ xcodebuild -create-xcframework \
     -framework $(pwd)/build-tvos-sim/framework/llama.framework \
     -debug-symbols $(pwd)/build-tvos-sim/dSYMs/llama.dSYM \
     -output $(pwd)/build-apple/llama.xcframework
+
+cp -R /Users/francoisdaniels/Documents/code/llama-cpp/build-apple/llama.xcframework /Users/francoisdaniels/Documents/Code/g1-local-assistant/client-ios/G1LocalAssistant/Vendor/
