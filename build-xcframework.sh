@@ -272,7 +272,7 @@ combine_static_libraries() {
         "ios")
             if [[ "$is_simulator" == "true" ]]; then
                 sdk="iphonesimulator"
-                archs="arm64 x86_64"
+                archs="arm64"
                 min_version_flag="-mios-simulator-version-min=${IOS_MIN_OS_VERSION}"
             else
                 sdk="iphoneos"
@@ -283,14 +283,14 @@ combine_static_libraries() {
             ;;
         "macos")
             sdk="macosx"
-            archs="arm64 x86_64"
+            archs="arm64"
             min_version_flag="-mmacosx-version-min=${MACOS_MIN_OS_VERSION}"
             install_name="@rpath/llama.framework/Versions/Current/llama"
             ;;
         "visionos")
             if [[ "$is_simulator" == "true" ]]; then
                 sdk="xrsimulator"
-                archs="arm64 x86_64"
+                archs="arm64"
                 min_version_flag="-mtargetos=xros${VISIONOS_MIN_OS_VERSION}-simulator"
             else
                 sdk="xros"
@@ -303,7 +303,7 @@ combine_static_libraries() {
         "tvos")
             if [[ "$is_simulator" == "true" ]]; then
                 sdk="appletvsimulator"
-                archs="arm64 x86_64"
+                archs="arm64"
                 min_version_flag="-mtvos-simulator-version-min=${TVOS_MIN_OS_VERSION}"
             else
                 sdk="appletvos"
@@ -410,7 +410,8 @@ cmake -B build-ios-sim -G Xcode \
     -DIOS=ON \
     -DCMAKE_SYSTEM_NAME=iOS \
     -DCMAKE_OSX_SYSROOT=iphonesimulator \
-    -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+    -DCMAKE_OSX_ARCHITECTURES="arm64" \
+    -DCMAKE_SYSTEM_PROCESSOR=arm64 \
     -DCMAKE_XCODE_ATTRIBUTE_SUPPORTED_PLATFORMS=iphonesimulator \
     -DCMAKE_C_FLAGS="${COMMON_C_FLAGS}" \
     -DCMAKE_CXX_FLAGS="${COMMON_CXX_FLAGS}" \
@@ -424,6 +425,7 @@ cmake -B build-ios-device -G Xcode \
     -DCMAKE_OSX_DEPLOYMENT_TARGET=${IOS_MIN_OS_VERSION} \
     -DCMAKE_OSX_SYSROOT=iphoneos \
     -DCMAKE_OSX_ARCHITECTURES="arm64" \
+    -DCMAKE_SYSTEM_PROCESSOR=arm64 \
     -DCMAKE_XCODE_ATTRIBUTE_SUPPORTED_PLATFORMS=iphoneos \
     -DCMAKE_C_FLAGS="${COMMON_C_FLAGS}" \
     -DCMAKE_CXX_FLAGS="${COMMON_CXX_FLAGS}" \
@@ -435,7 +437,8 @@ echo "Building for macOS..."
 cmake -B build-macos -G Xcode \
     "${COMMON_CMAKE_ARGS[@]}" \
     -DCMAKE_OSX_DEPLOYMENT_TARGET=${MACOS_MIN_OS_VERSION} \
-    -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+    -DCMAKE_OSX_ARCHITECTURES="arm64" \
+    -DCMAKE_SYSTEM_PROCESSOR=arm64 \
     -DCMAKE_C_FLAGS="${COMMON_C_FLAGS}" \
     -DCMAKE_CXX_FLAGS="${COMMON_CXX_FLAGS}" \
     -DLLAMA_CURL=OFF \
@@ -447,6 +450,7 @@ cmake -B build-visionos -G Xcode \
     "${COMMON_CMAKE_ARGS[@]}" \
     -DCMAKE_OSX_DEPLOYMENT_TARGET=${VISIONOS_MIN_OS_VERSION} \
     -DCMAKE_OSX_ARCHITECTURES="arm64" \
+    -DCMAKE_SYSTEM_PROCESSOR=arm64 \
     -DCMAKE_SYSTEM_NAME=visionOS \
     -DCMAKE_OSX_SYSROOT=xros \
     -DCMAKE_XCODE_ATTRIBUTE_SUPPORTED_PLATFORMS=xros \
@@ -460,7 +464,8 @@ echo "Building for visionOS simulator..."
 cmake -B build-visionos-sim -G Xcode \
     "${COMMON_CMAKE_ARGS[@]}" \
     -DCMAKE_OSX_DEPLOYMENT_TARGET=${VISIONOS_MIN_OS_VERSION} \
-    -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+    -DCMAKE_OSX_ARCHITECTURES="arm64" \
+    -DCMAKE_SYSTEM_PROCESSOR=arm64 \
     -DCMAKE_SYSTEM_NAME=visionOS \
     -DCMAKE_OSX_SYSROOT=xrsimulator \
     -DCMAKE_XCODE_ATTRIBUTE_SUPPORTED_PLATFORMS=xrsimulator \
@@ -477,7 +482,8 @@ cmake -B build-tvos-sim -G Xcode \
     -DCMAKE_OSX_DEPLOYMENT_TARGET=${TVOS_MIN_OS_VERSION} \
     -DCMAKE_SYSTEM_NAME=tvOS \
     -DCMAKE_OSX_SYSROOT=appletvsimulator \
-    -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+    -DCMAKE_OSX_ARCHITECTURES="arm64" \
+    -DCMAKE_SYSTEM_PROCESSOR=arm64 \
     -DGGML_METAL=ON \
     -DCMAKE_XCODE_ATTRIBUTE_SUPPORTED_PLATFORMS=appletvsimulator \
     -DCMAKE_C_FLAGS="${COMMON_C_FLAGS}" \
@@ -493,6 +499,7 @@ cmake -B build-tvos-device -G Xcode \
     -DCMAKE_SYSTEM_NAME=tvOS \
     -DCMAKE_OSX_SYSROOT=appletvos \
     -DCMAKE_OSX_ARCHITECTURES="arm64" \
+    -DCMAKE_SYSTEM_PROCESSOR=arm64 \
     -DGGML_METAL=ON \
     -DCMAKE_XCODE_ATTRIBUTE_SUPPORTED_PLATFORMS=appletvos \
     -DCMAKE_C_FLAGS="${COMMON_C_FLAGS}" \
@@ -529,7 +536,7 @@ xcodebuild -create-xcframework \
     -framework $(pwd)/build-ios-device/framework/llama.framework \
     -debug-symbols $(pwd)/build-ios-device/dSYMs/llama.dSYM \
     -framework $(pwd)/build-macos/framework/llama.framework \
-    -debug-symbols $(pwd)/build-macos/dSYMS/llama.dSYM \
+    -debug-symbols $(pwd)/build-macos/dSYMs/llama.dSYM \
     -framework $(pwd)/build-visionos/framework/llama.framework \
     -debug-symbols $(pwd)/build-visionos/dSYMs/llama.dSYM \
     -framework $(pwd)/build-visionos-sim/framework/llama.framework \
@@ -540,4 +547,5 @@ xcodebuild -create-xcframework \
     -debug-symbols $(pwd)/build-tvos-sim/dSYMs/llama.dSYM \
     -output $(pwd)/build-apple/llama.xcframework
 
+rm -rf /Users/francoisdaniels/Documents/Code/g1-local-assistant/client-ios/G1LocalAssistant/Vendor/llama.xcframework
 cp -R /Users/francoisdaniels/Documents/code/llama-cpp/build-apple/llama.xcframework /Users/francoisdaniels/Documents/Code/g1-local-assistant/client-ios/G1LocalAssistant/Vendor/
