@@ -76,6 +76,12 @@ rm -rf build-visionos-sim
 rm -rf build-tvos-sim
 rm -rf build-tvos-device
 
+# Location of the prebuilt GGMLMetal.xcframework (defaults to ../out)
+REPO_ROOT="$(cd .. && pwd)"
+GGMLMETAL_XCFRAMEWORK=${GGMLMETAL_XCFRAMEWORK:-"${REPO_ROOT}/out/GGMLMetal.xcframework"}
+GGMLMETAL_SLICE_SIM="${GGMLMETAL_XCFRAMEWORK}/ios-arm64_x86_64-simulator"
+GGMLMETAL_SLICE_DEV="${GGMLMETAL_XCFRAMEWORK}/ios-arm64"
+
 # Setup the xcframework build directory structure
 setup_framework_structure() {
     local build_dir=$1
@@ -114,33 +120,37 @@ setup_framework_structure() {
         local module_path=${build_dir}/framework/${framework_name}.framework/Modules/
     fi
 
-    # Copy all required headers (common for all platforms)
+    # Copy only llama public headers
     cp include/llama.h             ${header_path}
-    cp ggml/include/ggml.h         ${header_path}
-    cp ggml/include/ggml-opt.h     ${header_path}
-    cp ggml/include/ggml-alloc.h   ${header_path}
-    cp ggml/include/ggml-backend.h ${header_path}
-    cp ggml/include/ggml-metal.h   ${header_path}
-    cp ggml/include/ggml-cpu.h     ${header_path}
-    cp ggml/include/ggml-blas.h    ${header_path}
-    cp ggml/include/gguf.h         ${header_path}
+
+    # Make ggml headers available locally so that #include "ggml.h" in llama.h resolves
+    if [[ -d "${GGMLMETAL_SLICE_DEV}/GGMLMetal.framework/Headers" ]]; then
+        cp "${GGMLMETAL_SLICE_DEV}/GGMLMetal.framework/Headers/ggml.h"              ${header_path} || true
+        cp "${GGMLMETAL_SLICE_DEV}/GGMLMetal.framework/Headers/ggml-alloc.h"        ${header_path} || true
+        cp "${GGMLMETAL_SLICE_DEV}/GGMLMetal.framework/Headers/ggml-backend.h"      ${header_path} || true
+        cp "${GGMLMETAL_SLICE_DEV}/GGMLMetal.framework/Headers/ggml-metal.h"        ${header_path} || true
+        cp "${GGMLMETAL_SLICE_DEV}/GGMLMetal.framework/Headers/ggml-cpu.h"          ${header_path} || true
+        cp "${GGMLMETAL_SLICE_DEV}/GGMLMetal.framework/Headers/ggml-blas.h"         ${header_path} || true
+        cp "${GGMLMETAL_SLICE_DEV}/GGMLMetal.framework/Headers/ggml-opt.h"          ${header_path} || true
+        cp "${GGMLMETAL_SLICE_DEV}/GGMLMetal.framework/Headers/ggml-cpp.h"          ${header_path} || true
+        cp "${GGMLMETAL_SLICE_DEV}/GGMLMetal.framework/Headers/gguf.h"              ${header_path} || true
+    fi
 
     # Create module map (common for all platforms)
     cat > ${module_path}module.modulemap << EOF
 framework module llama {
     header "llama.h"
-    header "ggml.h"
-    header "ggml-alloc.h"
-    header "ggml-backend.h"
-    header "ggml-metal.h"
-    header "ggml-cpu.h"
-    header "ggml-blas.h"
-    header "gguf.h"
 
-    link "c++"
-    link framework "Accelerate"
-    link framework "Metal"
-    link framework "Foundation"
+    // allow textual inclusion of ggml headers referenced by llama.h
+    textual header "ggml.h"
+    textual header "ggml-alloc.h"
+    textual header "ggml-backend.h"
+    textual header "ggml-metal.h"
+    textual header "ggml-cpu.h"
+    textual header "ggml-blas.h"
+    textual header "ggml-opt.h"
+    textual header "ggml-cpp.h"
+    textual header "gguf.h"
 
     export *
 }
@@ -245,14 +255,22 @@ combine_static_libraries() {
         output_lib="${build_dir}/framework/${framework_name}.framework/${framework_name}"
     fi
 
-    local libs=(
-        "${base_dir}/${build_dir}/src/${release_dir}/libllama.a"
-        "${base_dir}/${build_dir}/ggml/src/${release_dir}/libggml.a"
-        "${base_dir}/${build_dir}/ggml/src/${release_dir}/libggml-base.a"
-        "${base_dir}/${build_dir}/ggml/src/${release_dir}/libggml-cpu.a"
-        "${base_dir}/${build_dir}/ggml/src/ggml-metal/${release_dir}/libggml-metal.a"
-        "${base_dir}/${build_dir}/ggml/src/ggml-blas/${release_dir}/libggml-blas.a"
-    )
+    local libs=()
+    if [[ "$platform" == "ios" ]]; then
+        # Do not embed ggml; link external GGMLMetal framework at dynamic link step
+        libs=(
+            "${base_dir}/${build_dir}/src/${release_dir}/libllama.a"
+        )
+    else
+        libs=(
+            "${base_dir}/${build_dir}/src/${release_dir}/libllama.a"
+            "${base_dir}/${build_dir}/ggml/src/${release_dir}/libggml.a"
+            "${base_dir}/${build_dir}/ggml/src/${release_dir}/libggml-base.a"
+            "${base_dir}/${build_dir}/ggml/src/${release_dir}/libggml-cpu.a"
+            "${base_dir}/${build_dir}/ggml/src/ggml-metal/${release_dir}/libggml-metal.a"
+            "${base_dir}/${build_dir}/ggml/src/ggml-blas/${release_dir}/libggml-blas.a"
+        )
+    fi
 
     # Create temporary directory for processing
     local temp_dir="${base_dir}/${build_dir}/temp"
@@ -322,14 +340,30 @@ combine_static_libraries() {
 
     # Create dynamic library
     echo "Creating dynamic library for ${platform}."
-    xcrun -sdk $sdk clang++ -dynamiclib \
-        -isysroot $(xcrun --sdk $sdk --show-sdk-path) \
-        $arch_flags \
-        $min_version_flag \
-        -Wl,-force_load,"${temp_dir}/combined.a" \
-        -framework Foundation -framework Metal -framework Accelerate \
-        -install_name "$install_name" \
-        -o "${base_dir}/${output_lib}"
+    if [[ "$platform" == "ios" ]]; then
+        local slice_dir="$GGMLMETAL_SLICE_DEV"
+        if [[ "$is_simulator" == "true" ]]; then
+            slice_dir="$GGMLMETAL_SLICE_SIM"
+        fi
+        xcrun -sdk $sdk clang++ -dynamiclib \
+            -isysroot $(xcrun --sdk $sdk --show-sdk-path) \
+            $arch_flags \
+            $min_version_flag \
+            -Wl,-force_load,"${temp_dir}/combined.a" \
+            -F "$slice_dir" -framework GGMLMetal \
+            -Xlinker -rpath -Xlinker @executable_path/Frameworks \
+            -install_name "$install_name" \
+            -o "${base_dir}/${output_lib}"
+    else
+        xcrun -sdk $sdk clang++ -dynamiclib \
+            -isysroot $(xcrun --sdk $sdk --show-sdk-path) \
+            $arch_flags \
+            $min_version_flag \
+            -Wl,-force_load,"${temp_dir}/combined.a" \
+            -framework Foundation -framework Metal -framework Accelerate \
+            -install_name "$install_name" \
+            -o "${base_dir}/${output_lib}"
+    fi
 
     # Platform-specific post-processing for device builds
     if [[ "$is_simulator" == "false" ]]; then
@@ -415,6 +449,8 @@ cmake -B build-ios-sim -G Xcode \
     -DCMAKE_XCODE_ATTRIBUTE_SUPPORTED_PLATFORMS=iphonesimulator \
     -DCMAKE_C_FLAGS="${COMMON_C_FLAGS}" \
     -DCMAKE_CXX_FLAGS="${COMMON_CXX_FLAGS}" \
+    -DLLAMA_USE_GGMLMETAL_FRAMEWORK=ON \
+    -DGGMLMETAL_FRAMEWORK_DIR="${GGMLMETAL_SLICE_SIM}" \
     -DLLAMA_CURL=OFF \
     -S .
 cmake --build build-ios-sim --config Release -- -quiet
@@ -429,6 +465,8 @@ cmake -B build-ios-device -G Xcode \
     -DCMAKE_XCODE_ATTRIBUTE_SUPPORTED_PLATFORMS=iphoneos \
     -DCMAKE_C_FLAGS="${COMMON_C_FLAGS}" \
     -DCMAKE_CXX_FLAGS="${COMMON_CXX_FLAGS}" \
+    -DLLAMA_USE_GGMLMETAL_FRAMEWORK=ON \
+    -DGGMLMETAL_FRAMEWORK_DIR="${GGMLMETAL_SLICE_DEV}" \
     -DLLAMA_CURL=OFF \
     -S .
 cmake --build build-ios-device --config Release -- -quiet
@@ -546,6 +584,3 @@ xcodebuild -create-xcframework \
     -framework $(pwd)/build-tvos-sim/framework/llama.framework \
     -debug-symbols $(pwd)/build-tvos-sim/dSYMs/llama.dSYM \
     -output $(pwd)/build-apple/llama.xcframework
-
-rm -rf /Users/francoisdaniels/Documents/Code/g1-local-assistant/client-ios/G1LocalAssistant/Vendor/llama.xcframework
-cp -R /Users/francoisdaniels/Documents/code/llama-cpp/build-apple/llama.xcframework /Users/francoisdaniels/Documents/Code/g1-local-assistant/client-ios/G1LocalAssistant/Vendor/
