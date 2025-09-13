@@ -47,6 +47,10 @@ endif()
 
 option(BUILD_SHARED_LIBS "build shared libraries" ${BUILD_SHARED_LIBS_DEFAULT})
 
+# Allow linking a prebuilt GGMLMetal.framework instead of compiling ggml (iOS builds)
+option(LLAMA_USE_GGMLMETAL_FRAMEWORK "llama: use external GGMLMetal.framework (imports ggml)" OFF)
+set(GGMLMETAL_FRAMEWORK_DIR "" CACHE PATH "Path to GGMLMetal.framework slice (e.g., .../GGMLMetal.xcframework/ios-arm64)")
+
 if (WIN32)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 endif()
@@ -163,7 +167,15 @@ if (LLAMA_USE_SYSTEM_GGML)
     add_library(ggml ALIAS ggml::ggml)
 endif()
 
-if (NOT TARGET ggml AND NOT LLAMA_USE_SYSTEM_GGML)
+if (LLAMA_USE_GGMLMETAL_FRAMEWORK AND GGMLMETAL_FRAMEWORK_DIR)
+    add_library(ggml SHARED IMPORTED GLOBAL)
+    set_target_properties(ggml PROPERTIES
+        FRAMEWORK TRUE
+        IMPORTED_LOCATION "${GGMLMETAL_FRAMEWORK_DIR}/GGMLMetal.framework/GGMLMetal"
+        IMPORTED_SONAME "@rpath/GGMLMetal.framework/GGMLMetal"
+        INTERFACE_INCLUDE_DIRECTORIES "${GGMLMETAL_FRAMEWORK_DIR}/GGMLMetal.framework/Headers"
+    )
+elseif (NOT TARGET ggml AND NOT LLAMA_USE_SYSTEM_GGML)
     set(GGML_BUILD_NUMBER ${LLAMA_BUILD_NUMBER})
     set(GGML_BUILD_COMMIT ${LLAMA_BUILD_COMMIT})
     add_subdirectory(ggml)
